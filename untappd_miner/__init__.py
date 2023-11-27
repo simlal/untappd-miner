@@ -1,1 +1,1 @@
-from .untappd_miner import UntappdMiner, ApiMiner, WebMiner
+from .untappd_miner import UntappdMiner, UntappdApiMiner, UntappdWebMiner
