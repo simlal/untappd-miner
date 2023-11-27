@@ -8,8 +8,9 @@ exclude = [".venv"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-requests = "^2.31.0"
 python-dotenv = "^1.0.0"
+httpx = "^0.25.2"
+selectolax = "^0.3.17"
 
 
 [build-system]
