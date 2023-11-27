@@ -1,1 +1,1 @@
-from .untappd_miner import Beer
+from .untappd_miner import UntappdMiner
