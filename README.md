@@ -1,1 +1,1 @@
-# untappd-s
+# untappd-miner
