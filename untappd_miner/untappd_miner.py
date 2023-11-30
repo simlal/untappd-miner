@@ -25,7 +25,7 @@ class UntappdMiner:
         self._dotenv_file = dotenv_file
         
     # Basic get request
-    def _fetch_url(
+    def fetch_url(
         self, 
         url: str, 
         headers: dict | None = None, 
@@ -34,17 +34,19 @@ class UntappdMiner:
         try:
             res = httpx.get(url=url, headers=headers, params=params)
             res.raise_for_status()
-            
-            content_type = res.headers["content-type"]
-            if "text/html" in content_type:
-                return res.text
-            elif "application/json":
-                return res.json()
-            else:
-                return res
+            return res
         except httpx.RequestError as e:
             print(f"An error occured for request: {e}")
             raise e
+    
+    def _parse_response(self, res: httpx.Response) -> dict | str:
+        content_type = res.headers["content-type"]
+        if "text/html" in content_type:
+            return res.text
+        elif "application/json" in content_type:
+            return res.json()
+        else:
+            return res
     
     @staticmethod
     def parse_dotenv(dotenv_file: Path | None, key: str) -> dict | None:
@@ -80,7 +82,7 @@ class UntappdApiMiner(UntappdMiner):
             "client_secret": self._client_secret
         }        
         
-        res = self._fetch_url(url, params=params)
+        res = self.fetch_url(url, params=params)
         return res
     
 class UntappdWebMiner(UntappdMiner):
@@ -109,15 +111,17 @@ class UntappdWebMiner(UntappdMiner):
         if endpoint not in endpoints:
             raise ValueError(f"'endpoint' must be one of {endpoints}")
         
-        if endpoint == endpoint[0]:
+        if endpoint == endpoints[0]:
             url = self.BASE_URL + self.BEER_TR_ENDPOINT
         
         if endpoint == endpoints[1]:
             url = self.BASE_URL + self.BREWERY_TR_ENDPOINT
+        print(url)
         
         # Get source from given endpoint
         headers = {"User-Agent": self._user_agent}
-        html = self._fetch_url(url=url, headers=headers)
+        response = self.fetch_url(url=url, headers=headers)
+        html = self._parse_response(response)
         
         # Fetch countries from endpoint
         soup = BeautifulSoup(html, "html.parser")
