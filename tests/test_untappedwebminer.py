@@ -1,37 +1,46 @@
-from untappd_miner import UntappdWebMiner
+from untappd_miner import UntappdMiner, UntappdWebMiner
 import unittest
 
-class TestUntappdWebMiner(unittest.TestCase):
-    
+class TestUntappdMiner(unittest.TestCase):
     def setUp(self):
-        self.miner = UntappdWebMiner()
+        self.miner_default = UntappdMiner(None)
+        self.miner_dotenv = UntappdMiner()
+        self.miner_chromeua = UntappdMiner()
         
+        self.base_url = UntappdWebMiner().BASE_URL
+        
+    # TODO TEST .env
+    
     def test_base_url(self):
-        base_url = self.miner.BASE_URL
-        res = self.miner.fetch_url(base_url)
+        res = self.miner_default.fetch_url(self.base_url)
         self.assertEqual(res.status_code, 200)
-        
+    
     def test_parse_response_text(self):
-        res = self.miner.fetch_url(self.miner.BASE_URL)
-        parsed_res = self.miner._parse_response(res)
+        res = self.miner_default.fetch_url(self.base_url)
+        parsed_res = self.miner_default._parse_response(res)
         self.assertIsInstance(parsed_res, str)
         
+    # TODO test JSON PARSER
+class TestUntappdWebMiner(unittest.TestCase):
+    def setUp(self):
+        self.webminer = UntappdWebMiner()
+        
     def test_beer_tr_endpoint(self):
-        beer_tr_endpoint = self.miner.BASE_URL + self.miner.BEER_TR_ENDPOINT
-        res = self.miner.fetch_url(beer_tr_endpoint)
+        beer_tr_endpoint = self.webminer.BASE_URL + self.webminer.BEER_TR_ENDPOINT
+        res = self.webminer.fetch_url(beer_tr_endpoint)
         self.assertEqual(res.status_code, 200)
     
     def test_brewey_tr_endpoint(self):
-        brewery_tr_endpoint = self.miner.BASE_URL + self.miner.BREWERY_TR_ENDPOINT
-        res = self.miner.fetch_url(brewery_tr_endpoint)
+        brewery_tr_endpoint = self.webminer.BASE_URL + self.webminer.BREWERY_TR_ENDPOINT
+        res = self.webminer.fetch_url(brewery_tr_endpoint)
         self.assertEqual(res.status_code, 200)
     
     def test_get_countries_slug_beer(self):
-        countries = self.miner._get_countries_slug("beer")
+        countries = self.webminer._get_countries_slug("beer")
         self.assertIsInstance(countries, list)
         self.assertTrue(len(countries) > 0)
     
     def test_get_countries_slug_brewery(self):
-        countries = self.miner._get_countries_slug("brewery")
+        countries = self.webminer._get_countries_slug("brewery")
         self.assertIsInstance(countries, list)
         self.assertTrue(len(countries) > 0)
