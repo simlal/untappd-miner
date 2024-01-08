@@ -2,6 +2,7 @@ from dotenv import dotenv_values
 from pathlib import Path
 from typing import Optional, Union
 import time
+from datetime import date, datetime
 from dataclasses import dataclass
 
 import httpx
@@ -52,24 +53,47 @@ class Venue():
     loyal_patrons: list[str]    # user ids
     num_beers_on_menu: int    # Might be null
 
-#TODO 
+@dataclass
+class BeerRating():
+    user_id: str
+    checkin_venue: str    # venue endpoint/id
+    serving_type: str
+    comment: str
+    purchased_at: str    # venue endpoint/id
+    number_tagged_friends: int
+    has_picture: bool
+    checkin_time: datetime
+
 @dataclass
 class BeerDetails():
     checkin_stats: CheckinStats
-    loyal_drinkers: list[str]    # user ids
+    description: str
+    loyal_drinkers: list[str]    # user id for /user/id endpoint
     similar_beers: list[int]    # beer ids
     verified_locations: list[str]    # venue ids
+    individual_ratings: BeerRating
 #TODO FINISH IMPLEMENTATION
 @dataclass
 class Beer():
-    id_url: str
-    brewery_id: str    # id_url or brewery
+    id_url: str    # unique beer for endpoint /b/slug/bid
+    bid: int    # beer id (part of id_url)
+    brewery_id: str
+    name: str
+    style: str
+    abv: float
+    ibu: int
+    weight_avg_ratings: float
+    total_ratings: int
+    date_added: date
+    details: BeerDetails
+    
         
 #TODO USER AND SUPERUSER DATACLASS?
     
 class UntappdMiner:    
     def __init__(self, dotenv_file: str | None = None) -> None:
         self.dotenv_file = dotenv_file
+        self.client = httpx.Client()    # Init a client to store/send cookies
         self.breweries = {}    # keys will be unique url/id
         self.beers = {}
              
@@ -98,7 +122,7 @@ class UntappdMiner:
     ) -> httpx.Response:
         for i in range(max_retries):
             try:
-                res = httpx.get(url=url, headers=headers, params=params)
+                res = self.client.get(url=url, headers=headers, params=params)
                 res.raise_for_status()
                 return res
             except httpx.RequestError as e:
@@ -201,7 +225,7 @@ class UntappdWebMiner(UntappdMiner):
         
         # Get all data for each possible endpoint
         url = self.BASE_URL + self.BREWERY_TR_ENDPOINT
-        headers = {"User-Agent": self._user_agent}    
+        headers = {"User-Agent": self._user_agent} 
         for c_slug in countries:
             country_name = self.__country_name_from_slug(c_slug)
             for btype in brewery_types:
@@ -251,15 +275,28 @@ class UntappdWebMiner(UntappdMiner):
                     if brewery_data.id_url not in self.breweries:
                         self.breweries[brewery_data.id_url] = brewery_data
                     
-        #TODO
         # Get the BreweryDetails data
-        # for brewery_id in self.breweries:
+        for brewery_id in self.breweries:
+            pass
     
                     
                     
     #TODO GET DATA FROM THE BREWERY PAGE     
-    def get_brewery_details(self, brewery_id: int) -> Brewery:
-        pass
+    def get_brewery_details(self, brewery_id: str) -> Brewery:
+        try :
+            brewery_id = str(brewery_id)
+        except:
+            raise TypeError("'brewery_id' must be a string.")
+        
+        # Get the base page for a given brewery
+        url = self.BASE_URL + f"/{brewery_id}"
+        headers = {"User-Agent": self._user_agent}
+        response = self.fetch_url(url=url, headers=headers)
+        html = self.parse_response(response)
+             
+        # TODO get 
+        
+        
     
     #TODO GET DATA FROM THE VENUE PAGE
     def get_venue_details(self, venue_id: int) -> Venue:
@@ -274,7 +311,7 @@ class UntappdWebMiner(UntappdMiner):
         pass
     
     # TODO GET LAST 500 ratings for a beer  
-    def get_beer_ratings(self, beer_id: int) -> list[dict]:
+    def get_all_beer_ratings(self, beer_id: int) -> list[dict]:
         pass
     
     def _get_countries_slug(self, endpoint: str) -> list[str]:
