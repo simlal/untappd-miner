@@ -210,11 +210,10 @@ class UntappdWebMiner(UntappdMiner):
         possible_btypes = self._get_brewery_type_slug()
         
         # Validate country and brewery_type
-        if country == "all":
-            countries = possible_countries
-        if country not in countries:
-            raise ValueError(f"'country' must be one of {countries}")
-        countries = [country] if isinstance(country, str) else country
+        countries = possible_countries if country == "all" else None
+        if country not in possible_countries and countries is None:
+            raise ValueError(f"'country' must be one of {possible_countries}")
+        countries = [country] if countries is None else countries
 
         
         if brewery_type == "all":
@@ -236,7 +235,7 @@ class UntappdWebMiner(UntappdMiner):
                 
                 # Skip if content is empty
                 if self.__empty_content(html, endpoint_name="brewery"):
-                    print(f"Empty content for country: {c} and brewery_type: {btype}")
+                    print(f"Empty content for country: {c_slug} and brewery_type: {btype}")
                     continue
             
                 soup = BeautifulSoup(html, "html.parser")
@@ -274,6 +273,7 @@ class UntappdWebMiner(UntappdMiner):
                     
                     if brewery_data.id_url not in self.breweries:
                         self.breweries[brewery_data.id_url] = brewery_data
+                    print(self.breweries)
                     
         # Get the BreweryDetails data
         for brewery_id in self.breweries:
@@ -282,7 +282,7 @@ class UntappdWebMiner(UntappdMiner):
                     
                     
     #TODO GET DATA FROM THE BREWERY PAGE     
-    def get_brewery_details(self, brewery_id: str) -> Brewery:
+    def get_brewery_details(self, brewery_id: str, detailed_checkins: bool=False) -> Brewery:
         try :
             brewery_id = str(brewery_id)
         except:
