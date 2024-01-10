@@ -23,7 +23,6 @@ class BreweryCheckinStats(CheckinStats):
 class BreweryDetails():
     description: str
     checkin_stats: BreweryCheckinStats
-    likers_sample: list[str]
     brewery_locations: list[str]    # Brewery-tied venue ids
     top_beers: list[int]    # Beer ids
     all_beers: list[int]   # Beer ids
@@ -87,9 +86,11 @@ class Beer():
     date_added: date
     details: BeerDetails
     
+@dataclass
+class User():
+    # TODO
+    pass
         
-#TODO USER AND SUPERUSER DATACLASS?
-    
 class UntappdMiner:    
     def __init__(self, dotenv_file: str | None = None) -> None:
         self.dotenv_file = dotenv_file
@@ -273,7 +274,43 @@ class UntappdWebMiner(UntappdMiner):
                     brewery_data_dict["weight_avg_ratings"] = float(div_rating.find("div", {"class": "caps"}).attrs["data-rating"])
                     print(brewery_data_dict)
                     
-                    # TODO GET BREWERY DETAILS
+                    # Fetch brewery page to populate details
+                    brew_url = self.BASE_URL + brewery_data_dict["id_url"]
+                    brew_resp = self.fetch_url(url=brew_url, headers=headers)
+                    brew_home_html = self.parse_response(brew_resp)
+                    soup = BeautifulSoup(brew_home_html, "html.parser")
+                    
+                    # Long-form description
+                    brew_details_dict = {}
+                    brew_details_dict["description"] = soup.find(
+                        "div", {"class": "beer-descrption-read-less"}
+                    ).text.strip().removesuffix(" Show Less")
+                    # checkin stats
+                    stats_div = soup.find_all("div", {"class": "stats"})
+                    stats_p = stats_div[0].find_all("p")
+                    for p in stats_p:
+                        spans = p.find_all("span")
+                        if "Total" in spans[0].text:
+                            total_checkins = int(spans[1].text.replace(",", ""))
+                        if "Unique" in spans[0].text:
+                            unique_checkins = int(spans[1].text.replace(",", ""))
+                        if "Monthly" in spans[0].text:
+                            monthly_checkins = int(spans[1].text.replace(",", ""))
+                        if "You" in spans[0].text:
+                            your_checkins = int(spans[1].text.replace(",", ""))
+                    likes = int(soup.find("abbr").text.replace(",", ""))    # total likes
+                    
+                    brew_details_dict["checkin_stats"] = BreweryCheckinStats(
+                        total=total_checkins,
+                        unique=unique_checkins,
+                        monthly=monthly_checkins,
+                        current_user=your_checkins,
+                        likes=likes
+                    )
+                    # TODO fetch locations + top beers + popular locations
+                    # TODO fetch all_beers
+                    
+                    # TODO GET BREWERY/BEER DETAILS 
                     # Add to breweries container based on dataclass
                     # brewery_data = Brewery()
                     # if brewery_data.id_url not in self.breweries:
