@@ -122,6 +122,7 @@ class UntappdMiner:
     ) -> httpx.Response:
         for i in range(max_retries):
             try:
+                print(f"Fetching data from {url} with {params=}")
                 res = self.client.get(url=url, headers=headers, params=params)
                 res.raise_for_status()
                 return res
@@ -215,12 +216,10 @@ class UntappdWebMiner(UntappdMiner):
             raise ValueError(f"'country' must be one of {possible_countries}")
         countries = [country] if countries is None else countries
 
-        
-        if brewery_type == "all":
-            brewery_types = possible_btypes
-        if brewery_type not in possible_btypes:
-            raise ValueError(f"'brewery_type' must be one of {possible_btypes}")
-        brewery_types = [brewery_type] if isinstance(brewery_type, str) else brewery_type
+        brewery_types = possible_btypes if brewery_type == "all" else None
+        if brewery_type not in possible_btypes and brewery_types is None:
+            raise ValueError(f"'country' must be one of {possible_btypes}")
+        brewery_types = [brewery_type] if brewery_types is None else brewery_types
         
         # Get all data for each possible endpoint
         url = self.BASE_URL + self.BREWERY_TR_ENDPOINT
@@ -232,6 +231,7 @@ class UntappdWebMiner(UntappdMiner):
                 params = {"country": c_slug, "brewery_type": btype}
                 response = self.fetch_url(url=url, headers=headers, params=params)
                 html = self.parse_response(response)
+                # print(html)
                 
                 # Skip if content is empty
                 if self.__empty_content(html, endpoint_name="brewery"):
@@ -242,38 +242,43 @@ class UntappdWebMiner(UntappdMiner):
                 beer_items = soup.find_all("div", {"class": "beer-item"})
                 for bi in beer_items:
                     # Get the TopRated data first
-                    brewery_data = Brewery()
+                    brewery_data_dict = {}
                     
                     # id_url is the unique identifier and endpoint for brewery
                     pname = bi.find("p", {"class": "name"})
-                    brewery_data.id_url = pname.find("a").attrs["href"].strip()
-                    brewery_data.fullname = pname.text.strip()
+                    brewery_data_dict["id_url"] = pname.find("a").attrs["href"].strip()
+                    brewery_data_dict["fullname"] = pname.text.strip()
                     
                     # Geography can be city, region country or city, country or country
                     pstyle = bi.find_all("p", {"class": "style"})
                     geography = pstyle[0].text.strip()
-                    brewery_data.city = geography.split(",")[0].strip() if "," in geography else None
+                    brewery_data_dict["city"] = geography.split(",")[0].strip() if "," in geography else None
                     region_country_temp = geography.split(",")[1].strip() if "," in geography else geography
                     region_temp = region_country_temp.split(" ") if " " in region_country_temp else None
                     if region_temp is not None:
-                        brewery_data.region = self.__remove_rightmost_country(country_name, region_temp)
+                        region_temp = self.__remove_rightmost_country(country_name, region_temp)
+                        brewery_data_dict["region"] = " ".join(region_temp)
                     else:
-                        brewery_data.region = None
-                    brewery_data.country = country_name
-                    brewery_data.brewery_type = pstyle[1].text.strip()
+                        brewery_data_dict["region"] = None
+                    brewery_data_dict["country"] = country_name
+                    brewery_data_dict["brewery_type"] = pstyle[1].text.strip()
                     
                     # Aggregated stats from top-rated
                     div_details = bi.find("div", {"class": "details brewery"})
                     num_beers_temp = div_details.find("p", {"class": "abv"}).text.strip()
-                    brewery_data.number_of_beers = int(num_beers_temp.split(" ")[0].replace(",", ""))
+                    brewery_data_dict["number_of_beers"] = int(num_beers_temp.split(" ")[0].replace(",", ""))
                     num_ratings_temp = div_details.find("p", {"class": "ibu"}).text.strip()
-                    brewery_data.total_ratings = int(num_ratings_temp.split(" ")[0].replace(",", ""))
+                    brewery_data_dict["total_ratings"] = int(num_ratings_temp.split(" ")[0].replace(",", ""))
                     div_rating = bi.find("div", {"class": "rating"})
-                    brewery_data.weight_avg_ratings = float(div_rating.find("div", {"class": "caps"}).attrs["data-rating"])
+                    brewery_data_dict["weight_avg_ratings"] = float(div_rating.find("div", {"class": "caps"}).attrs["data-rating"])
+                    print(brewery_data_dict)
                     
-                    if brewery_data.id_url not in self.breweries:
-                        self.breweries[brewery_data.id_url] = brewery_data
-                    print(self.breweries)
+                    # TODO GET BREWERY DETAILS
+                    # Add to breweries container based on dataclass
+                    # brewery_data = Brewery()
+                    # if brewery_data.id_url not in self.breweries:
+                    #     self.breweries[brewery_data.id_url] = brewery_data
+                    # print(self.breweries)
                     
         # Get the BreweryDetails data
         for brewery_id in self.breweries:
@@ -373,7 +378,7 @@ class UntappdWebMiner(UntappdMiner):
             ua = ua_init
         return ua
     
-    def __empty_content(self, html: str, endpoint_name: str) -> None:
+    def __empty_content(self, html: str, endpoint_name: str) -> bool:
         if html == "" or html is None:
             raise ValueError(f"Empty content for endpoint: {endpoint_name}")
         
@@ -383,11 +388,12 @@ class UntappdWebMiner(UntappdMiner):
         # Check content according to toprated endpoint 0=beer 1=brewery
         soup = BeautifulSoup(html, "html.parser")
         
+        # TODO Figure out what the empty ocntent of beers would be
         if endpoint_name == self.ENDPOINT_TR_NAMES[0]:
             pass
         if endpoint_name == self.ENDPOINT_TR_NAMES[1]:
             ptags = soup.find_all("p", attrs={"class": "no-activity"})
-            return len(ptags) == 0
+            return len(ptags) > 0    # presence no-activity p-tag means empty content
     
     def __country_name_from_slug(self, slug: str) -> str:
         country_name = " ".join(slug.split("-")).title()
@@ -395,7 +401,8 @@ class UntappdWebMiner(UntappdMiner):
     
     def __remove_rightmost_country(self, country_name: str, state_country_list: list[str]) -> list[str]:
         scl_reversed = state_country_list[::-1]
-        scl_reversed.remove(country_name)
+        if country_name in scl_reversed:
+            scl_reversed.remove(country_name)
         scl_normal = scl_reversed[::-1]
         return scl_normal
         
