@@ -24,9 +24,9 @@ class BreweryDetails():
     description: str
     checkin_stats: BreweryCheckinStats
     brewery_locations: list[str]    # Brewery-tied venue ids
-    top_beers: list[int]    # Beer ids
-    all_beers: list[int]   # Beer ids
-    popular_locations: list[str]   # Popular Venue ids
+    top_beers: list[str]    # unique beer-name-id slug
+    all_beers: list[str]   # unique beer-name-id slug
+    popular_locations: list[str]   # unique venue_id_url 
 @dataclass
 class Brewery():
     id_url: str
@@ -226,96 +226,39 @@ class UntappdWebMiner(UntappdMiner):
         url = self.BASE_URL + self.BREWERY_TR_ENDPOINT
         headers = {"User-Agent": self._user_agent} 
         for c_slug in countries:
-            country_name = self.__country_name_from_slug(c_slug)
             for btype in brewery_types:
                 # Per country and brewery_type request
                 params = {"country": c_slug, "brewery_type": btype}
                 response = self.fetch_url(url=url, headers=headers, params=params)
                 html = self.parse_response(response)
-                # print(html)
                 
                 # Skip if content is empty
                 if self.__empty_content(html, endpoint_name="brewery"):
                     print(f"Empty content for country: {c_slug} and brewery_type: {btype}")
                     continue
-            
+                # Populate from TR page
                 soup = BeautifulSoup(html, "html.parser")
-                beer_items = soup.find_all("div", {"class": "beer-item"})
-                for bi in beer_items:
-                    # Get the TopRated data first
-                    brewery_data_dict = {}
-                    
-                    # id_url is the unique identifier and endpoint for brewery
-                    pname = bi.find("p", {"class": "name"})
-                    brewery_data_dict["id_url"] = pname.find("a").attrs["href"].strip()
-                    brewery_data_dict["fullname"] = pname.text.strip()
-                    
-                    # Geography can be city, region country or city, country or country
-                    pstyle = bi.find_all("p", {"class": "style"})
-                    geography = pstyle[0].text.strip()
-                    brewery_data_dict["city"] = geography.split(",")[0].strip() if "," in geography else None
-                    region_country_temp = geography.split(",")[1].strip() if "," in geography else geography
-                    region_temp = region_country_temp.split(" ") if " " in region_country_temp else None
-                    if region_temp is not None:
-                        region_temp = self.__remove_rightmost_country(country_name, region_temp)
-                        brewery_data_dict["region"] = " ".join(region_temp)
-                    else:
-                        brewery_data_dict["region"] = None
-                    brewery_data_dict["country"] = country_name
-                    brewery_data_dict["brewery_type"] = pstyle[1].text.strip()
-                    
-                    # Aggregated stats from top-rated
-                    div_details = bi.find("div", {"class": "details brewery"})
-                    num_beers_temp = div_details.find("p", {"class": "abv"}).text.strip()
-                    brewery_data_dict["number_of_beers"] = int(num_beers_temp.split(" ")[0].replace(",", ""))
-                    num_ratings_temp = div_details.find("p", {"class": "ibu"}).text.strip()
-                    brewery_data_dict["total_ratings"] = int(num_ratings_temp.split(" ")[0].replace(",", ""))
-                    div_rating = bi.find("div", {"class": "rating"})
-                    brewery_data_dict["weight_avg_ratings"] = float(div_rating.find("div", {"class": "caps"}).attrs["data-rating"])
-                    print(brewery_data_dict)
-                    
-                    # Fetch brewery page to populate details
-                    brew_url = self.BASE_URL + brewery_data_dict["id_url"]
-                    brew_resp = self.fetch_url(url=brew_url, headers=headers)
-                    brew_home_html = self.parse_response(brew_resp)
-                    soup = BeautifulSoup(brew_home_html, "html.parser")
-                    
-                    # Long-form description
-                    brew_details_dict = {}
-                    brew_details_dict["description"] = soup.find(
-                        "div", {"class": "beer-descrption-read-less"}
-                    ).text.strip().removesuffix(" Show Less")
-                    # checkin stats
-                    stats_div = soup.find_all("div", {"class": "stats"})
-                    stats_p = stats_div[0].find_all("p")
-                    for p in stats_p:
-                        spans = p.find_all("span")
-                        if "Total" in spans[0].text:
-                            total_checkins = int(spans[1].text.replace(",", ""))
-                        if "Unique" in spans[0].text:
-                            unique_checkins = int(spans[1].text.replace(",", ""))
-                        if "Monthly" in spans[0].text:
-                            monthly_checkins = int(spans[1].text.replace(",", ""))
-                        if "You" in spans[0].text:
-                            your_checkins = int(spans[1].text.replace(",", ""))
-                    likes = int(soup.find("abbr").text.replace(",", ""))    # total likes
-                    
-                    brew_details_dict["checkin_stats"] = BreweryCheckinStats(
-                        total=total_checkins,
-                        unique=unique_checkins,
-                        monthly=monthly_checkins,
-                        current_user=your_checkins,
-                        likes=likes
-                    )
-                    # TODO fetch locations + top beers + popular locations
-                    # TODO fetch all_beers
-                    
-                    # TODO GET BREWERY/BEER DETAILS 
-                    # Add to breweries container based on dataclass
-                    # brewery_data = Brewery()
-                    # if brewery_data.id_url not in self.breweries:
-                    #     self.breweries[brewery_data.id_url] = brewery_data
-                    # print(self.breweries)
+                brewery_data_dict = self._brewery_baseinfo_from_tr_page(soup, c_slug)
+                
+                # Fetch brewery page to populate details
+                brew_url = self.BASE_URL + brewery_data_dict["id_url"]
+                brew_resp = self.fetch_url(url=brew_url, headers=headers)
+                brew_home_html = self.parse_response(brew_resp)
+                soup = BeautifulSoup(brew_home_html, "html.parser")
+                
+                # Setup details container and fill info
+                brew_details_dict = {}
+                brew_details_dict["description"] = self._brewery_description(soup)
+                brew_details_dict["checkin_stats"] = self._brewery_checkin_stats(soup)
+                # TODO fetch locations + top beers + popular locations
+                # TODO fetch all_beers
+                
+                # TODO GET BREWERY/BEER DETAILS 
+                # Add to breweries container based on dataclass
+                # brewery_data = Brewery()
+                # if brewery_data.id_url not in self.breweries:
+                #     self.breweries[brewery_data.id_url] = brewery_data
+                # print(self.breweries)
                     
         # Get the BreweryDetails data
         for brewery_id in self.breweries:
@@ -345,14 +288,14 @@ class UntappdWebMiner(UntappdMiner):
         pass
     
     #TODO GET DATA 
-    def get_beers_from_brewery(self, brewery_id: int) -> list[Beer]:
+    def all_beers_from_brewery(self, brewery_id: int) -> list[Beer]:
         pass
     
     #TODO GET DATA FROM THE BEER PAGE
     def get_beer_details(self, beer_id: int) -> Beer:
         pass
     
-    # TODO GET LAST 500 ratings for a beer  
+    # TODO GET LAST X ratings for a beer  
     def get_all_beer_ratings(self, beer_id: int) -> list[dict]:
         pass
     
@@ -402,6 +345,87 @@ class UntappdWebMiner(UntappdMiner):
         if exclude_cider_mead:
             brewery_types = [btype for btype in brewery_types if btype not in ["cidery", "meadery"]]
         return brewery_types
+    
+    def _brewery_baseinfo_from_tr_page(self, soup: BeautifulSoup, country_slug: str) -> dict[int|float|str]:
+        # Format in readable name
+        country_name = self.__country_name_from_slug(country_slug)
+        
+        beer_items = soup.find_all("div", {"class": "beer-item"})
+        for bi in beer_items:
+            # Get the TopRated data first
+            brewery_data_dict = {}
+            
+            # id_url is the unique identifier and endpoint for brewery
+            pname = bi.find("p", {"class": "name"})
+            brewery_data_dict["id_url"] = pname.find("a").attrs["href"].strip()
+            brewery_data_dict["fullname"] = pname.text.strip()
+            
+            # Geography can be city, region country or city, country or country
+            pstyle = bi.find_all("p", {"class": "style"})
+            geography = pstyle[0].text.strip()
+            brewery_data_dict["city"] = geography.split(",")[0].strip() if "," in geography else None
+            region_country_temp = geography.split(",")[1].strip() if "," in geography else geography
+            region_temp = region_country_temp.split(" ") if " " in region_country_temp else None
+            if region_temp is not None:
+                region_temp = self.__remove_rightmost_country(country_name, region_temp)
+                brewery_data_dict["region"] = " ".join(region_temp)
+            else:
+                brewery_data_dict["region"] = None
+            brewery_data_dict["country"] = country_name
+            brewery_data_dict["brewery_type"] = pstyle[1].text.strip()
+            
+            # Aggregated stats from top-rated
+            div_details = bi.find("div", {"class": "details brewery"})
+            num_beers_temp = div_details.find("p", {"class": "abv"}).text.strip()
+            brewery_data_dict["number_of_beers"] = int(num_beers_temp.split(" ")[0].replace(",", ""))
+            num_ratings_temp = div_details.find("p", {"class": "ibu"}).text.strip()
+            brewery_data_dict["total_ratings"] = int(num_ratings_temp.split(" ")[0].replace(",", ""))
+            div_rating = bi.find("div", {"class": "rating"})
+            brewery_data_dict["weight_avg_ratings"] = float(div_rating.find("div", {"class": "caps"}).attrs["data-rating"])
+        return brewery_data_dict
+    
+    def _brewery_description(self, soup: BeautifulSoup) -> str:
+        # Long-form description
+        lf_description = soup.find(
+            "div", {"class": "beer-descrption-read-less"}
+        ).text.strip().removesuffix(" Show Less")
+        return lf_description
+    
+    def _brewery_checkin_stats(self, soup: BeautifulSoup) -> BreweryCheckinStats:
+        stats_div = soup.find_all("div", {"class": "stats"})
+        stats_p = stats_div[0].find_all("p")
+        for p in stats_p:
+            spans = p.find_all("span")
+            if "Total" in spans[0].text:
+                total_checkins = int(spans[1].text.replace(",", ""))
+            if "Unique" in spans[0].text:
+                unique_checkins = int(spans[1].text.replace(",", ""))
+            if "Monthly" in spans[0].text:
+                monthly_checkins = int(spans[1].text.replace(",", ""))
+            if "You" in spans[0].text:
+                your_checkins = int(spans[1].text.replace(",", ""))
+        likes = int(soup.find("abbr").text.replace(",", ""))    # total likes
+        
+        brewery_checkin_stats = BreweryCheckinStats(
+                    total=total_checkins,
+                    unique=unique_checkins,
+                    monthly=monthly_checkins,
+                    current_user=your_checkins,
+                    likes=likes
+                )
+        return brewery_checkin_stats
+    
+    def _brewery_locations(self, soup: BeautifulSoup) -> list[str] | list[Venue]:
+        pass
+    
+    def _brewery_top_beers(self, soup: BeautifulSoup) -> list[str] | list[Beer]: 
+        pass
+    
+    def _brewery_popular_locations(self, soup: BeautifulSoup) -> list[str] | list[Venue]:
+        pass
+    
+    def _beer_baseinfo_from_tr_page(self, html: str) -> dict:
+        pass
     
     ### Internal helpers ###
     
