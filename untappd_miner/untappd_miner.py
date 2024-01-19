@@ -12,6 +12,8 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+
 
 @dataclass
 class CheckinStats():
@@ -462,13 +464,33 @@ class UntappdWebMiner(UntappdMiner):
         pass
     
     def _brewery_all_beers(self, brewery_url: str) -> list[Beer]:
-        brewery_beer_url = self.BASE_URL + brewery_url + "/beer"
-        headers = {"User-Agent": self._user_agent}
-        response = self.fetch_url(url=brewery_beer_url, headers=headers)
+        # brewery_beer_url = self.BASE_URL + brewery_url + "/beer"
+        # headers = {"User-Agent": self._user_agent}
+        # response = self.fetch_url(url=brewery_beer_url, headers=headers)
         
-        # Use selenium to click on "Show More" button until all beers are loaded
-        # Instantiate web driver
-        webdriver = self.__init_webdriver()
+        # Naviguate to brewery beer page
+        driver = self.__init_webdriver
+        driver.get(self.BASE_URL + brewery_url + "/beer")
+        # load all beers client-side "show-more" button
+        html = self._load_all_beers(driver)
+        
+        print(html)
+        driver.quit()
+        
+    def _load_all_beers(self, driver: webdriver) -> str:
+        while True:
+            try:
+                # Wait until the "Show More" button is clickable
+                show_more_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "/html/body/div[4]/div[2]/div/div[3]/div/a"))
+                )
+                show_more_button.click()
+                print("clicked!")
+            except NoSuchElementException:
+                print("All beers loaded!")
+                break    # End of the page
+        html = driver.page_source
+        return html
         
     
     ### Internal helpers ###
@@ -512,7 +534,10 @@ class UntappdWebMiner(UntappdMiner):
         return scl_normal
     
     def __init_webdriver(self) -> webdriver:
-        pass
+        options = Options()
+        options.add_argument("--headless")  # Run in headless mode
+        driver = webdriver.Firefox(options=options)
+        return driver
         
             
         
