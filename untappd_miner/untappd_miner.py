@@ -7,6 +7,11 @@ from dataclasses import dataclass
 
 import httpx
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 @dataclass
 class CheckinStats():
@@ -250,8 +255,14 @@ class UntappdWebMiner(UntappdMiner):
                 brew_details_dict = {}
                 brew_details_dict["description"] = self._brewery_description(soup)
                 brew_details_dict["checkin_stats"] = self._brewery_checkin_stats(soup)
-                # TODO fetch locations + top beers + popular locations
-                # TODO fetch all_beers
+                
+                # Sidebar info from main page (locations, top beers, popular locations)
+                brew_details_dict["brewery_locations"] = self._brewery_locations(soup)
+                brew_details_dict["top_beers"] = self._brewery_top_beers(soup)
+                brew_details_dict["popular_locations"] = self._brewery_popular_locations(soup)
+                
+                # Fetch all beers for a brewery
+                # TODO GET ALL BEERS FOR A BREWERY                
                 
                 # TODO GET BREWERY/BEER DETAILS 
                 # Add to breweries container based on dataclass
@@ -416,16 +427,49 @@ class UntappdWebMiner(UntappdMiner):
         return brewery_checkin_stats
     
     def _brewery_locations(self, soup: BeautifulSoup) -> list[str] | list[Venue]:
-        pass
+        # Sidebar content with locations
+        h3 = soup.find("h3", text="Brewery Locations")
+        divs = h3.find_next_siblings("div")
+        
+        # Extract the hrefs for each location
+        links = [div.find("a", {"class": "track-click"}) for div in divs]
+        hrefs = [link.get("href") for link in links if link is not None]
+        
+        return hrefs
     
     def _brewery_top_beers(self, soup: BeautifulSoup) -> list[str] | list[Beer]: 
-        pass
+        # Sidebar content with top beers
+        h3 = soup.find("h3", text="Top Beers")
+        divs = h3.find_next_siblings("div")
+
+        # Extract the hrefs for each beer
+        links = [div.find("a", {"class": "track-click"}) for div in divs]
+        hrefs = [link.get("href") for link in links if link is not None]
+        
+        return hrefs
     
     def _brewery_popular_locations(self, soup: BeautifulSoup) -> list[str] | list[Venue]:
-        pass
+        # Sidebar content with popular locations
+        h3 = soup.find("h3", text="Popular Locations")
+        divs = h3.find_next_siblings("div")
+
+        # Extract the hrefs for each beer
+        links = [div.find("a", {"class": "track-click"}) for div in divs]
+        hrefs = [link.get("href") for link in links if link is not None]
+        return hrefs
     
     def _beer_baseinfo_from_tr_page(self, html: str) -> dict:
         pass
+    
+    def _brewery_all_beers(self, brewery_url: str) -> list[Beer]:
+        brewery_beer_url = self.BASE_URL + brewery_url + "/beer"
+        headers = {"User-Agent": self._user_agent}
+        response = self.fetch_url(url=brewery_beer_url, headers=headers)
+        
+        # Use selenium to click on "Show More" button until all beers are loaded
+        # Instantiate web driver
+        webdriver = self.__init_webdriver()
+        
     
     ### Internal helpers ###
     
@@ -466,6 +510,9 @@ class UntappdWebMiner(UntappdMiner):
             scl_reversed.remove(country_name)
         scl_normal = scl_reversed[::-1]
         return scl_normal
+    
+    def __init_webdriver(self) -> webdriver:
+        pass
         
             
         
