@@ -13,6 +13,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import WebDriverException
 
 
 @dataclass
@@ -153,7 +154,9 @@ class UntappdMiner:
     def parse_dotenv(dotenv_file: Path | None, key: str) -> dict | None:
         # dotenv file is optional for webminer
         if dotenv_file is None:
-            return None
+            raise ValueError(
+                "dotenv_file must be provided for both API-related and webscrapping methods."
+            )
         
         config = dotenv_values(dotenv_file)
         value = config[key] if key in config else None
@@ -463,29 +466,44 @@ class UntappdWebMiner(UntappdMiner):
     def _beer_baseinfo_from_tr_page(self, html: str) -> dict:
         pass
     
-    def _brewery_all_beers(self, brewery_url: str) -> list[Beer]:
+    def _brewery_all_beers(self, brewery_endpoint: str) -> list[Beer]:
         # brewery_beer_url = self.BASE_URL + brewery_url + "/beer"
         # headers = {"User-Agent": self._user_agent}
         # response = self.fetch_url(url=brewery_beer_url, headers=headers)
         
         # Naviguate to brewery beer page
-        driver = self.__init_webdriver
-        driver.get(self.BASE_URL + brewery_url + "/beer")
+        driver = self.__init_webdriver_login(headless_mode=False)
+        url = self.BASE_URL + f"/{brewery_endpoint}" + "/beer"
+        self.__webdriver_navigate(driver, url)
+        
         # load all beers client-side "show-more" button
         html = self._load_all_beers(driver)
         
-        print(html)
+        with open("test_beers.html", "w") as f:
+            f.write(html)
         driver.quit()
         
     def _load_all_beers(self, driver: webdriver) -> str:
         while True:
             try:
+                # Popup or obscuring ele blocking button
+                obscuring_element = driver.find_element(By.CSS_SELECTOR, "div.announcementInner")
+                if obscuring_element:
+                    # close obscuring ele if present
+                    close_button = obscuring_element.find_element(By.CSS_SELECTOR, "button.close")
+                    if close_button:
+                        close_button.click()
+                    # agree to cookies if present
+                    agree_button = driver.find_element(By.CSS_SELECTOR, ".announcement > a:nth-child(2)")
+                    if agree_button:
+                        agree_button.click()
+
                 # Wait until the "Show More" button is clickable
                 show_more_button = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, "/html/body/div[4]/div[2]/div/div[3]/div/a"))
                 )
                 show_more_button.click()
-                print("clicked!")
+                print("Show more beers was clicked!")
             except NoSuchElementException:
                 print("All beers loaded!")
                 break    # End of the page
@@ -533,11 +551,74 @@ class UntappdWebMiner(UntappdMiner):
         scl_normal = scl_reversed[::-1]
         return scl_normal
     
-    def __init_webdriver(self) -> webdriver:
+    def __init_webdriver_login(self, headless_mode: bool=True) -> webdriver:
+        # launch configuration
         options = Options()
-        options.add_argument("--headless")  # Run in headless mode
+        if headless_mode:
+            options.add_argument("--headless")  # Run in headless mode
+        print(f"Initializing selenium webdriver {'in headless_mode' if headless_mode else ''}...")
         driver = webdriver.Firefox(options=options)
+        
+        # Fetch credentials for blocked content
+        print("Logging in to untappd...")
+        login_url = self.BASE_URL + "/login"
+        self.__webdriver_navigate(driver, login_url)
+        username = self.parse_dotenv(self._dotenv_file, "USERNAME")
+        password = self.parse_dotenv(self._dotenv_file, "PASSWORD")
+        
+        # Enter credentials
+        try:
+            driver.find_element(By.ID, "username").send_keys(username)
+            driver.find_element(By.ID, "password").send_keys(password)
+        except:
+            driver.quit()
+            raise ValueError("Error entering credentials for login.")
+        
+        # Solve CAPTCHA by manually
+        catpcha_timelimit = 15
+        print("Solve CAPTCHA by manually user...")
+        time.sleep(catpcha_timelimit)
+
+        #! NOT WORKING AS EXPECTED TO LISTEN TO CAPTCHA BIENG COMPLETED
+        # # Switch to the iframe
+        # frames = driver.find_elements(By.TAG_NAME, 'iframe')
+        # for frame in frames:
+        #     driver.switch_to.frame(frame)
+        #     try:
+        #         # Try to find the checkbox in the current frame
+        #         checkbox = driver.find_element(By.CLASS_NAME, 'recaptcha-checkbox-checkmark')
+        #         break
+        #     except NoSuchElementException:
+        #         # If the checkbox is not in this frame, switch back to the main content
+        #         driver.switch_to.default_content()
+
+        # # Wait for the checkbox to be checked
+        # wait = WebDriverWait(driver, catpcha_timelimit)
+        # try:
+        #     solved = wait.until(
+        #         lambda driver: checkbox.get_attribute('aria-checked') == 'true'
+        #     )
+        # except:
+        #     driver.quit()
+        #     raise ValueError(f"Error solving CAPTCHA within timelimit={catpcha_timelimit}s")
+
+        # # Switch back to the main content
+        # driver.switch_to.default_content()
+
+        # Login!
+        try:
+            driver.find_element(By.CLASS_NAME, "button yellow submit-btn").click()
+        except:
+            driver.quit()
+            raise ValueError("Error clicking login button.")  
         return driver
         
-            
+    def __webdriver_navigate(self, driver: webdriver, url: str) -> None:
+        print(f"Navigating to selenium webdriver to {url}...")
+        try:
+            driver.get(url)
+        except WebDriverException as e:
+            print(f"Error navigating to {url}: {e}")
+            driver.quit()
+            raise e
         
